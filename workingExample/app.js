@@ -16,6 +16,9 @@ const fs = require('fs');
 var bcrypt = require('bcrypt');
 const saltRounds = 10;
 
+// Setup JWT for tokens
+const jwt = require('jsonwebtoken');
+
 /**
  * Will create a user in the database.json file
  */
@@ -34,26 +37,43 @@ app.post('/users', (req, res) => {
         }
 
         // Now let's insert this into the database!
-        fs.writeFileSync('database.json', JSON.stringify(user));
+        bcrypt.hash(user.password, saltRounds, function (err, hash) {
+            user.password = hash;
+            fs.writeFileSync('database.json', JSON.stringify(user));
+        });
         res.status(201).send('User created!')
     } else {
         res.status(400).send('Email, name, and password must be included in request for user');
     }
 });
 
+/**
+ * Will see if a user exists, checks if the passwords match, and will return a token
+ */
 app.patch('/users/tokens', (req, res) => {
     // 1. Check that the information for authentication is provided
-
+    const user = req.body;
+    if(!user.username || !user.password) {
+        res.status(400).send('Username and password must be included!');
+    }
     // 2. See if the user exists in the database
-
+    const dbUser = JSON.parse(fs.readFileSync('database.json'));
+    if(dbUser.username !== user.username) {
+        res.status(404).send('The user does not exist!');
+    }
     // 3. If the user exists lets see if the password they send and the password in the database are correct
+    bcrypt.compare(user.password, dbUser.password, (err, data) => {
+        // If they match we will get data back
+        if (data) {
+            // 4. If they are correct lets generate that token that will expire in 30 mins
+            const token = jwt.sign({ data: user.username}, 'SecretValue', { expiresIn: '1800s' });
+             // 5. Let's send that token off to be put to good use!
+            res.status(200).send(token);
+        } else {
+            return res.status(401).json({ msg: "Passwords do not match!" })
+        }
 
-    // 4. If they are correct lets generate that token
-
-    // 5. If they are not correct let them know
-
-    // 6. Let's send that token off to be put to good use!
-    res.status(200).send();
+    });
 });
 
 app.listen(port, () => {
